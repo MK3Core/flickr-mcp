@@ -1,5 +1,13 @@
 import { buildAuthHeader, type Credentials } from './auth.js';
+import {
+  selectPhotoSizeFromFlickrSizes,
+  type FlickrPhotoSize,
+  type PhotoImageSize,
+} from './photo-size-selection.js';
 import { RateLimiter } from './rate-limiter.js';
+
+export type { FlickrPhotoSize, PhotoImageSize } from './photo-size-selection.js';
+export { selectPhotoSizeFromFlickrSizes } from './photo-size-selection.js';
 
 const FLICKR_API = 'https://www.flickr.com/services/rest/';
 
@@ -46,6 +54,14 @@ export interface FlickrExifTag {
   label: string;
   raw: { _content: string };
   clean?: { _content: string };
+}
+
+export interface PhotoImageBase64Result {
+  data: string;
+  mimeType: string;
+  label: string;
+  width: number;
+  height: number;
 }
 
 export class FlickrClient {
@@ -149,28 +165,30 @@ export class FlickrClient {
     };
   }
 
-  async getPhotoImageBase64(photoId: string): Promise<{ data: string; mimeType: string } | null> {
+  async getPhotoImageBase64(
+    photoId: string,
+    imageSize: PhotoImageSize = 'medium'
+  ): Promise<PhotoImageBase64Result | null> {
     try {
-      const photo = await this.getPhoto(photoId);
-      const pageUrl = photo.urls?.url?.find(u => u.type === 'photopage')?._content;
-      if (!pageUrl) return null;
-
-      // Build medium image URL from photo page URL pattern
-      const mediumUrl = `https://live.staticflickr.com/${photoId.slice(0, 4)}/${photoId}_m.jpg`;
-      // Actually let's use the sizes API which gives us real URLs
       const sizesData = await this.call('flickr.photos.getSizes', { photo_id: photoId });
-      const sizes = (sizesData['sizes'] as Record<string, unknown>)['size'] as Array<{ label: string; source: string }>;
-      const medium = sizes.find(s => s.label === 'Medium') ?? sizes.find(s => s.label === 'Small') ?? sizes[0];
-      if (!medium) return null;
+      const raw = (sizesData['sizes'] as Record<string, unknown>)['size'];
+      const sizes = (Array.isArray(raw) ? raw : raw ? [raw] : []) as FlickrPhotoSize[];
+      const selected = selectPhotoSizeFromFlickrSizes(sizes, imageSize);
+      if (!selected?.source) return null;
 
       await this.limiter.consume(); // image fetch counts against our budget
-      const imgRes = await fetch(medium.source);
+      const imgRes = await fetch(selected.source);
       if (!imgRes.ok) return null;
 
       const buffer = await imgRes.arrayBuffer();
+      const width = Number(selected.width);
+      const height = Number(selected.height);
       return {
         data: Buffer.from(buffer).toString('base64'),
         mimeType: imgRes.headers.get('content-type') ?? 'image/jpeg',
+        label: selected.label,
+        width: Number.isFinite(width) ? width : 0,
+        height: Number.isFinite(height) ? height : 0,
       };
     } catch {
       return null;

@@ -1,5 +1,5 @@
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { FlickrClient } from './flickr-client.js';
+import { FlickrClient, type PhotoImageSize } from './flickr-client.js';
 
 export type { CallToolResult };
 
@@ -40,7 +40,13 @@ export const TOOLS: Tool[] = [
         include_image: {
           type: 'boolean',
           description:
-            'If true, fetch and return the photo as a base64 image (medium size). Enables visual analysis. Default: false.',
+            'If true, fetch and return the photo as a base64 image. Enables visual analysis. Default: false.',
+        },
+        image_size: {
+          type: 'string',
+          enum: ['medium', 'large'],
+          description:
+            'When include_image is true, which Flickr size to return via photos.getSizes. medium (~500px long edge, default) or large (~1600px, preferring Large 1600 with fallback to the largest non-original size). Ignored when include_image is false.',
         },
       },
       required: ['photo_id'],
@@ -297,6 +303,9 @@ export async function handleTool(
       case 'flickr_get_photo': {
         const photoId = String(args['photo_id']);
         const includeImage = Boolean(args['include_image'] ?? false);
+        const imageSizeArg = args['image_size'];
+        const imageSize: PhotoImageSize =
+          imageSizeArg === 'large' || imageSizeArg === 'medium' ? imageSizeArg : 'medium';
 
         const photo = await client.getPhoto(photoId);
         const tags = photo.tags?.tag?.map(t => t.raw).join(', ') ?? '(none)';
@@ -314,14 +323,18 @@ export async function handleTool(
           return text(summary);
         }
 
-        const imageData = await client.getPhotoImageBase64(photoId);
+        const imageData = await client.getPhotoImageBase64(photoId, imageSize);
         if (!imageData) {
           return text(`${summary}\n\n(Image could not be fetched)`);
         }
 
+        const imageMeta =
+          `Image size: ${imageData.label} (${imageData.width}×${imageData.height}px)`;
+        const summaryWithImage = `${summary}\n${imageMeta}`;
+
         return {
           content: [
-            { type: 'text' as const, text: summary },
+            { type: 'text' as const, text: summaryWithImage },
             { type: 'image' as const, data: imageData.data, mimeType: imageData.mimeType },
           ],
         };

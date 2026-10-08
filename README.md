@@ -130,7 +130,7 @@ These are the tools your AI assistant can call once the server is running. You d
 | Tool | Description |
 |---|---|
 | `flickr_list_photos` | List your photostream, paginated |
-| `flickr_get_photo` | Full photo details, optionally including the image itself for visual analysis |
+| `flickr_get_photo` | Full photo details; optionally include the image (`include_image`) at `medium` (default) or `large` via Flickr `photos.getSizes` |
 | `flickr_get_exif` | Camera metadata: make, model, lens, GPS, shutter speed, ISO |
 | `flickr_search_my_photos` | Search your own photos by keyword or tag |
 | `flickr_get_albums` | List your albums |
